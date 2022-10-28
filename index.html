@@ -123,22 +123,37 @@
         var message_array = [];
         message_array["General"] = [];
         message_array["Ressource"] = [];
+        var user_listing = [];
 
-        const login = prompt("Saisissez un nom d'utilisateur", "");
+        let login = prompt("Veuillez entrer un nom d'utilisateur","");
 
         socket.on("connect", () => {
+            socket.on('channel', (array, array2) => {
+                if (array.length > 2) {
+                    for (let compt = 2; compt < array.length; compt++) {
+                        if (channel_array.indexOf(array[compt]) == -1) {
+                            var li = document.createElement('li');
+                            var button = document.createElement('button');
+                            button.textContent = array[compt];
+                            button.setAttribute("onclick", "change_channel(this.value)")
+                            button.setAttribute("value", array[compt]);
+                            li.appendChild(button);
+                            list.appendChild(li);
+                        }
+                    }
+                }
+            });
             socket.emit('checkin', login)
         });
-
-        socket.on('error', () => {
-            location.reload();
-        })
 
         socket.on('checkin', (users) => {
             socket.emit('users', users, room, login);
         });
 
         function change_channel(value) {
+            if (message_array[value] == undefined) {
+                message_array[value] = [];
+            }
             while (messages.firstChild) {
                 messages.removeChild(messages.firstChild);
             }
@@ -166,7 +181,7 @@
                 return
             }
             else {
-                message_array[NewChannel] = [];
+                channel_array.push(NewChannel);
                 change_channel(NewChannel);
                 socket.emit('list_channel', NewChannel);
             }
@@ -178,46 +193,113 @@
 
             if (input.value) {
                 let msg = login + " à écrit dans " + room + " : " + input.value;
-                socket.emit('chat', msg, room);
+                let id = socket.id
+                let tempo = msg.split(":");
+                let mess_arr = tempo[1].trim().split(' ');
+                if (mess_arr[0].substring(0, 1) == "/") {
+                    switch (mess_arr[0]) {
+                        case ("/list"):
+                            let list = "";
+                            if (mess_arr[1] != undefined) {
+                                for (compt = 0; compt < channel_array.length; compt++) {
+                                    if (channel_array[compt].search(mess_arr[1]) != -1) {
+                                        list += channel_array[compt] + " ";
+                                    }
+                                }
+                            }
+                            else {
+                                for (compt = 0; compt < channel_array.length; compt++) {
+                                    list += channel_array[compt] + " ";
+                                }
+                            }
+                            alert(list)
+                            break;
+
+                        case ("/create"):
+                            create_channel();
+                            break;
+
+                        case ("/leave"):
+                            change_channel("General");
+                            break;
+
+                        case ("/join"):
+                            if (mess_arr[1] == undefined) {
+                                alert("cette commande requiert un nom");
+                            }
+                            else {
+                                if (channel_array.indexOf(mess_arr[1]) == -1) {
+                                    alert("channel inconnu");
+                                }
+                                else {
+                                    change_channel(mess_arr[1]);
+                                }
+                            }
+                            break;
+
+                        case ("/users"):
+                            let list2 = "";
+                            for (compt = 0; compt < user_listing.length; compt++) {
+                                list2 += user_listing[compt] + " ";
+                            }
+                            alert(list2)
+                            break;
+
+                        case ("/nick"):
+                            if (mess_arr[1] == undefined) {
+                                alert("cette commande requiert un nom");
+                            }
+                            else {
+                                socket.emit('change_log', mess_arr[1]);
+                                login = mess_arr[1];
+                            }
+                            break;
+                        default:
+                            let dest = mess_arr[0].substring(1);
+                            mess_arr.shift();
+                            let content = mess_arr.join(" ");
+                            socket.emit("private_mess", { login, id, dest, content })
+                    }
+                }
+                else {
+                    socket.emit('chat', msg, room);
+                }
                 input.value = '';
             }
         });
 
         socket.on('chat', (msg, room) => {
-            let id = socket.id
-            let tempo = msg.split(":");
-            let mess_arr = tempo[1].trim().split(' ');
-            if (mess_arr[0].substring(0, 1) == "/") {
-                let dest = mess_arr[0].substring(1);
-                mess_arr.shift();
-                let content = mess_arr.join(" ");
-                socket.emit("private_mess", { login, id, dest, content })
+            var item = document.createElement('li');
+            item.textContent = msg;
+            messages.appendChild(item);
+            window.scrollTo(0, document.body.scrollHeight);
+            let letters = login.length;
+            if (msg.substring(0, letters) == login) {
+                item.style.textAlign = "end";
+                item.style.background = "#efefef";
             }
-            else {
-                var item = document.createElement('li');
-                item.textContent = msg;
-                messages.appendChild(item);
-                window.scrollTo(0, document.body.scrollHeight);
-                let letters = login.length;
-                if (msg.substring(0, letters) == login) {
-                    item.style.textAlign = "end";
-                    item.style.background = "#efefef";
-                }
-                message_array[room].push(msg);
-            }
+            message_array[room].push(msg);
         });
 
         socket.on('list_channel', (channel) => {
+            if (channel_array.indexOf(channel) == -1) {
+                channel_array.push(channel);
+            }
             var li = document.createElement('li');
             var button = document.createElement('button');
             button.textContent = channel;
-            button.setAttribute("onclick", "change_channel(this.value)")
+            button.setAttribute("onclick", "change_channel(this.value)");
             button.setAttribute("value", channel);
             li.appendChild(button);
             list.appendChild(li);
         });
 
         socket.on('users', async (sockets, users, room, log) => {
+            for (compt = 0; compt < users.length; compt++) {
+                if (user_listing.indexOf(users[compt].customId) == -1) {
+                    user_listing.push(users[compt].customId);
+                }
+            }
             if (log == login) {
                 while (users_list.firstChild) {
                     users_list.removeChild(users_list.firstChild);
@@ -240,8 +322,7 @@
             if (id != socket.id) {
                 alert(login + " vous a envoyé un message : " + content)
             }
-        })
-
+        });
 
     </script>
 </body>
