@@ -55,50 +55,194 @@
             padding: 0.5rem 1rem;
         }
 
-        #messages>li:nth-child(odd) {
-            background: #efefef;
+        .container {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+        }
+
+        .channel {
+            flex: 1;
+        }
+
+        #channel_list {
+            list-style: none;
+        }
+
+        .messagerie {
+            flex: 5;
+        }
+
+        #channel_btn {
+            margin-top: 10px;
+            margin-left: 40px;
+        }
+
+        .users {
+            flex: 1;
+        }
+
+        #users_list {
+            list-style: none;
         }
     </style>
 </head>
 
 <body>
-    <ul id="messages"></ul>
-    <form id="form" action="">
-        <input id="input" autocomplete="off" /><button>Send</button>
-    </form>
+    <div class="container">
+        <div class="channel">
+            <ul id="channel_list">
+                <li><button value="General" onclick="change_channel(this.value)">General</button></li>
+                <li><button value="Ressource" onclick="change_channel(this.value)">Ressource</button></li>
+            </ul>
+            <button id="channel_btn" onclick="create_channel()">+ create</button>
+        </div>
+        <div class="messagerie">
+            <ul id="messages"></ul>
+            <form id="form" action="">
+                <input id="input" autocomplete="off" /><button>Send</button>
+            </form>
+        </div>
+        <div class="users">
+            <ul id="users_list">
+                <li>Membres Connectés</li>
+            </ul>
+        </div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         var socket = io();
-
         var messages = document.getElementById('messages');
         var form = document.getElementById('form');
         var input = document.getElementById('input');
+        var list = document.getElementById('channel_list')
+        var room = "General";
+        var users_list = document.getElementById('users_list');
+        var channel_array = ["General", "Ressource"];
+        var message_array = [];
+        message_array["General"] = [];
+        message_array["Ressource"] = [];
 
         const login = prompt("Saisissez un nom d'utilisateur", "");
+
+        socket.on("connect", () => {
+            socket.emit('checkin', login)
+        });
+
+        socket.on('error', () => {
+            location.reload();
+        })
+
+        socket.on('checkin', (users) => {
+            socket.emit('users', users, room, login);
+        });
+
+        function change_channel(value) {
+            while (messages.firstChild) {
+                messages.removeChild(messages.firstChild);
+            }
+            for (compt = 0; compt < message_array[value].length; compt++) {
+                var item = document.createElement('li');
+                item.textContent = message_array[value][compt];
+                messages.appendChild(item);
+                window.scrollTo(0, document.body.scrollHeight);
+                let letters = login.length;
+                if (message_array[value][compt].substring(0, letters) == login) {
+                    item.style.textAlign = "end";
+                    item.style.background = "#efefef";
+                }
+            }
+
+            socket.emit('create', room, value);
+            room = value;
+            socket.emit('checkin', login);
+        }
+
+        function create_channel() {
+            const NewChannel = prompt("Entrez le nom du nouveau channel", "");
+            if (NewChannel == "" || channel_array.includes(NewChannel) == true || NewChannel == null) {
+                alert("Nom incorrect")
+                return
+            }
+            else {
+                message_array[NewChannel] = [];
+                change_channel(NewChannel);
+                socket.emit('list_channel', NewChannel);
+            }
+        }
 
 
         form.addEventListener('submit', function (e) {
             e.preventDefault();
-            if (login === null) {
-                login = prompt("Saisissez un nom d'utilisateur", "");
-            }
+
             if (input.value) {
-                socket.emit('chat message', login + " : " + input.value);
+                let msg = login + " à écrit dans " + room + " : " + input.value;
+                socket.emit('chat', msg, room);
                 input.value = '';
             }
         });
 
-        socket.on('chat message', function (msg) {
-            var item = document.createElement('li');
-            item.textContent = msg;
-            messages.appendChild(item);
-            window.scrollTo(0, document.body.scrollHeight);
-            let letters = login.length;
-            if(msg.substring(0,letters) == login){
-                item.style.textAlign = "end";
+        socket.on('chat', (msg, room) => {
+            let id = socket.id
+            let tempo = msg.split(":");
+            let mess_arr = tempo[1].trim().split(' ');
+            if (mess_arr[0].substring(0, 1) == "/") {
+                let dest = mess_arr[0].substring(1);
+                mess_arr.shift();
+                let content = mess_arr.join(" ");
+                socket.emit("private_mess", { login, id, dest, content })
+            }
+            else {
+                var item = document.createElement('li');
+                item.textContent = msg;
+                messages.appendChild(item);
+                window.scrollTo(0, document.body.scrollHeight);
+                let letters = login.length;
+                if (msg.substring(0, letters) == login) {
+                    item.style.textAlign = "end";
+                    item.style.background = "#efefef";
+                }
+                message_array[room].push(msg);
             }
         });
+
+        socket.on('list_channel', (channel) => {
+            var li = document.createElement('li');
+            var button = document.createElement('button');
+            button.textContent = channel;
+            button.setAttribute("onclick", "change_channel(this.value)")
+            button.setAttribute("value", channel);
+            li.appendChild(button);
+            list.appendChild(li);
+        });
+
+        socket.on('users', async (sockets, users, room, log) => {
+            if (log == login) {
+                while (users_list.firstChild) {
+                    users_list.removeChild(users_list.firstChild);
+                }
+                var li = document.createElement('li');
+                li.textContent = "Membres Connectés dans " + room;
+                users_list.appendChild(li);
+                for (compt = 0; compt < users.length; compt++) {
+                    await users[compt].customId;
+                    if (sockets.includes(users[compt].clientId)) {
+                        var li = document.createElement('li');
+                        li.textContent = users[compt].customId
+                        users_list.appendChild(li);
+                    }
+                }
+            }
+        });
+
+        socket.on("private_mess", ({ login, content, id }) => {
+            if (id != socket.id) {
+                alert(login + " vous a envoyé un message : " + content)
+            }
+        })
+
+
     </script>
 </body>
 
